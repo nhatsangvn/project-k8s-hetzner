@@ -1,0 +1,104 @@
+#################################
+########## K3S-HETZNER ##########
+#################################
+# can run without a cluster
+# https://github.com/vitobotta/hetzner-k3s
+cd ~
+mkdir k3s-hetzner
+cd k3s-hetzner
+cat > test.yaml << EOF
+---
+hetzner_token: <hetzner-token>
+cluster_name: test-cluster
+kubeconfig_path: "/cluster/kubeconfig"
+k3s_version: v1.21.3+k3s1
+public_ssh_key_path: "~/.ssh/id_rsa.pub"
+private_ssh_key_path: "~/.ssh/id_rsa"
+ssh_allowed_networks:
+  - 0.0.0.0/0
+verify_host_key: false
+location: nbg1
+schedule_workloads_on_masters: false
+masters:
+  instance_type: cpx21
+  instance_count: 1
+worker_node_pools:
+- name: small
+  instance_type: cpx21
+  instance_count: 1
+enable_encryption: true # enable encryption for flannel ref
+EOF
+
+### create/update cluster
+docker run --rm -it -v ${PWD}:/cluster -v ${HOME}/.ssh:/tmp/.ssh vitobotta/hetzner-k3s:v0.5.6 create-cluster --config-file /cluster/test.yaml
+
+### delete cluster
+docker run --rm -it -v ${PWD}:/cluster -v ${HOME}/.ssh:/tmp/.ssh vitobotta/hetzner-k3s:v0.5.6 delete-cluster --config-file /cluster/test.yaml
+
+### command run on node
+cat /etc/systemd/system/k3s.service
+
+
+#################################
+########## CLUSTER API ##########
+#################################
+# requir a cluster to run
+# https://github.com/syself/cluster-api-provider-hetzner/blob/main/docs/topics/quickstart.md
+
+mkdir cluster-api
+cd cluster-api
+
+### install clusterctl command 
+curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.1.3/clusterctl-linux-amd64 -o clusterctl
+chmod +x ./clusterctl
+mv ./clusterctl /usr/local/bin/clusterctl
+clusterctl version
+
+### init the essential pods for management
+kubectl get po -A
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure hetzner
+kubectl get po -A
+
+### export env
+export HCLOUD_TOKEN="uDEpb1EDpL0G9mFYdD8TTwaTmQGiJVUPcmyZNwgMuSxXFrq3q17bj2Y8QQdXYHZ0" \
+export HCLOUD_SSH_KEY="test" \
+export CLUSTER_NAME="test-1m" \
+export HCLOUD_REGION="nbg1" \
+export CONTROL_PLANE_MACHINE_COUNT=1 \
+export WORKER_MACHINE_COUNT=1 \
+export KUBERNETES_VERSION=1.23.4 \
+export HCLOUD_CONTROL_PLANE_MACHINE_TYPE=cpx21 \
+export HCLOUD_WORKER_MACHINE_TYPE=cpx21 
+
+### create secret 
+kubectl create secret generic hetzner --from-literal=hcloud=$HCLOUD_TOKEN
+# Patch the created secret so it is automatically moved to the target cluster later.
+kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
+
+### init a yaml file and apply
+clusterctl generate cluster test-1m --kubernetes-version 1.23.4 --control-plane-machine-count=1 --worker-machine-count=1 > cluster1m.yaml
+kubectl apply -f cluster1m.yaml
+
+### get status of workload cluster
+kubectl get cluster
+clusterctl describe cluster test-1m --show-machinesets
+
+### command to run on workload nodes
+journalctl -u cloud-final.service 
+
+### workload cluster: get pods
+export CAPH_WORKER_CLUSTER_KUBECONFIG=/tmp/workload-kubeconfig
+clusterctl get kubeconfig test-1m > $CAPH_WORKER_CLUSTER_KUBECONFIG
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG kubectl get pods -A
+
+### workload cluster: add ccm
+helm repo add syself https://charts.syself.com
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG helm upgrade --install ccm syself/ccm-hcloud --version 1.0.9 \
+--namespace kube-system \
+--set privateNetwork.enabled=false
+
+### scale to 2 workload workers
+kubectl scale MachineDeployment/test-1m-md-0 --replicas=2
+
+### delete the workload cluster
+kubectl cluster delete test-1m
