@@ -60,7 +60,7 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 kubectl get po -A
 
 ### export env
-export HCLOUD_TOKEN="uDEpb1EDpL0G9mFYdD8TTwaTmQGiJVUPcmyZNwgMuSxXFrq3q17bj2Y8QQdXYHZ0" \
+export HCLOUD_TOKEN="<hetzner-token>" \
 export HCLOUD_SSH_KEY="test" \
 export CLUSTER_NAME="test-1m" \
 export HCLOUD_REGION="nbg1" \
