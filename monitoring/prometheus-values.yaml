@@ -1,0 +1,46 @@
+server:
+  image:
+    tag: v2.34.0
+  replicaCount: 1
+  global:
+    scrape_interval: 30s
+    scrape_timeout: 30s
+  ingress:
+    enabled: false
+  service:
+    enabled: true
+    type: NodePort
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1000Mi
+    requests:
+      cpu: 50m
+      memory: 500Mi
+kube-state-metrics:
+  image:
+    tag: v2.2.4
+  resources:
+    limits:
+      cpu: 10m
+      memory: 50Mi
+    requests:
+      cpu: 5m
+      memory: 25Mi
+nodeExporter:
+  resources:
+    limits:
+      cpu: 20m
+      memory: 40Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+  tolerations:
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    value: ""
+    effect: "NoSchedule"
+pushgateway:
+  enabled: false
+alertmanager:
+  enabled: false

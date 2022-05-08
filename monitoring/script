@@ -1,0 +1,71 @@
+#################################
+##########    GRAFANA  ##########
+#################################
+### add helm repo and update
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update grafana
+
+### list available version
+helm search repo grafana -l | grep -E "NAME|grafana/" > ./grafana-available-charts
+
+### list values of the current newest version (6.26.5)
+helm show all --version 6.26.5 grafana/grafana > ./grafana-description
+
+### create chart value file
+cat grafana-values.yaml
+
+### install the chart
+helm upgrade --install grafana grafana/grafana \
+  --version 6.26.5 --values grafana-values.yaml \
+  --namespace monitoring --create-namespace
+
+### retrieve default admin password
+kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+
+
+####################################
+########## METRICS-SERVER ##########
+####################################
+### get the metric of cluster
+kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
+￼
+### deploy metrics-server in ha mode
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/high-availability.yaml
+
+### verify
+kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
+
+
+####################################
+##########   PROMETHEUS   ##########
+####################################
+### add helm repo and update
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update prometheus-community
+
+### list available version
+helm search repo prometheus-community -l | grep -E "NAME|prometheus-community/prometheus" > ./prometheus-available-charts
+
+### list values of the current newest version (15.8.5)
+helm show all prometheus-community/prometheus --version 15.8.5 > ./prometheus-description
+
+### create chart value file
+cat prometheus-values.yaml
+
+### install the chart
+helm upgrade -i prometheus prometheus-community/prometheus -n monitoring --create-namespace --values prometheus-values.yaml --version 15.8.5 --reuse-values
+
+### check the NodePort service
+kubectl get svc -n monitoring
+
+
+######################################################
+##########   GRAFANA INTEGRATE PROMETHEUS   ##########
+######################################################
+### Data Source
+Data source: http://prometheus-server:80
+### Inject the dashboard id
+Id dashboard: 11757
+### Change IP to Hostname
+Variable node: label_values(node_exporter_build_info, node)
+
