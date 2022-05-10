@@ -6,10 +6,12 @@ persistence:
   enabled: true
   size: 8Gi
 
-ingress: 
+service:
   enabled: true
-  hosts: 
-  - "test-grafana.sohan.cloud"
+  type: NodePort
+
+ingress: 
+  enabled: false
 
 securityContext:
   runAsUser: 0
