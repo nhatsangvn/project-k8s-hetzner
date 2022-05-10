@@ -16,7 +16,7 @@ cat grafana-values.yaml
 
 ### install the chart
 helm upgrade --install grafana grafana/grafana \
-  --version 6.26.5 --values grafana-values.yaml \
+  --values ./grafana-values.yaml --version 6.26.5 --reuse-values \
   --namespace monitoring --create-namespace
 
 ### retrieve default admin password
@@ -53,7 +53,9 @@ helm show all prometheus-community/prometheus --version 15.8.5 > ./prometheus-de
 cat prometheus-values.yaml
 
 ### install the chart
-helm upgrade -i prometheus prometheus-community/prometheus -n monitoring --create-namespace --values prometheus-values.yaml --version 15.8.5 --reuse-values
+helm upgrade -i prometheus prometheus-community/prometheus \
+  --values ./prometheus-values.yaml --version 15.8.5 --reuse-values \
+  --namespace monitoring --create-namespace
 
 ### check the NodePort service
 kubectl get svc -n monitoring
