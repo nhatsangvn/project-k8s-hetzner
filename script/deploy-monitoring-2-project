@@ -1,0 +1,116 @@
+1. Have 2 seperated project in hetzner cloud
+
+
+2. Get the read-write token for each project
+- Save it
+mgmt => fmdGHOKd2485axXmre0wVZpLfnDkviA1TtdNVn52FJu6ImQOlUC3YRONOG8kTwmR
+workload => AROwAuIRPtgJYTOeBwLhcSR0OYBYqq6pMYLCEWGBXcPmHBygfOkJhg29yZ5lc0Sa
+
+
+3. Have a Linux machine with pre-install kubectl and helm (version 3) and git
+kubectl => https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#install-kubectl-binary-with-curl-on-linux
+helm => https://helm.sh/docs/intro/install/#from-the-binary-releases
+clusterctl => https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl
+git => apt-get install git / yum install git
+
+
+4. Create a keypair on that machine and upload to hetzner
+
+
+5. Clone the repo
+git clone https://github.com/nhatsangvn/project-k8s-hetzner
+
+5a. Create a mgmt cluster
+cd k3s-hetzner/
+- Edit token
+docker run --rm -it -v ${PWD}:/cluster -v ${HOME}/.ssh:/tmp/.ssh vitobotta/hetzner-k3s:v0.5.6 create-cluster --config-file /cluster/test.yaml
+- It will create a file name script in the cluster. Export file and check the cluster
+export KUBECONFIG=./config
+kubectl get pod -A --watch
+
+
+5b. Create a workload cluster
+export HCLOUD_TOKEN="AROwAuIRPtgJYTOeBwLhcSR0OYBYqq6pMYLCEWGBXcPmHBygfOkJhg29yZ5lc0Sa" \
+export HCLOUD_SSH_KEY="mgmt-key" \
+export CLUSTER_NAME="test-1m" \
+export HCLOUD_REGION="nbg1" \
+export CONTROL_PLANE_MACHINE_COUNT=1 \
+export WORKER_MACHINE_COUNT=1 \
+export KUBERNETES_VERSION=1.23.4 \
+export HCLOUD_CONTROL_PLANE_MACHINE_TYPE=cx21 \
+export HCLOUD_WORKER_MACHINE_TYPE=cx21 
+
+- Install clusterctl (https://cluster-api.sigs.k8s.io/user/quick-start.html#install-clusterctl)
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure hetzner
+cd ./cluster-api
+clusterctl generate cluster test-1m --control-plane-machine-count=1 --worker-machine-count=1 > cluster1m.yaml
+kubectl create secret generic hetzner --from-literal=hcloud=$HCLOUD_TOKEN
+kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
+- Apply config workload cluster
+kubectl apply -f cluster1m.yaml
+
+- Check the workload cluster
+export CAPH_WORKER_CLUSTER_KUBECONFIG=/tmp/workload-kubeconfig
+clusterctl get kubeconfig test-1m > $CAPH_WORKER_CLUSTER_KUBECONFIG
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG kubectl get pods -A
+
+- Install calico on workload cluster
+curl https://projectcalico.docs.tigera.io/manifests/calico.yaml -O
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG kubectl apply -f calico.yaml
+
+- Install hcloud cloud-controller on workload cluster
+helm repo add syself https://charts.syself.com
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG helm upgrade --install ccm syself/ccm-hcloud --version 1.0.9 \
+--namespace kube-system \
+--set privateNetwork.enabled=false
+
+- Install csi volume on workload cluster
+cat << EOF > csi-values.yaml
+storageClasses:
+- name: hcloud-volumes
+  defaultStorageClass: true
+  reclaimPolicy: Retain
+EOF
+
+KUBECONFIG=$CAPH_WORKER_CLUSTER_KUBECONFIG helm upgrade --install csi syself/csi-hcloud --version 0.2.0 \
+--namespace kube-system -f csi-values.yaml
+
+- Recheck the cluster
+clusterctl describe cluster test-1m --show-machinesets
+
+
+6. Export the KUBECONFIG of workload cluster to ease of use
+
+
+7. Install Grafana
+cd ../../monitoring/
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update grafana
+helm upgrade --install grafana grafana/grafana \
+  --values ./grafana-values.yaml --version 6.26.5 --reuse-values \
+  --namespace monitoring --create-namespace
+
+
+8. Install Metric-Server
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/high-availability.yaml
+- Verify
+
+
+9. Install Prometheus
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update prometheus-community
+helm upgrade -i prometheus prometheus-community/prometheus \
+  --values ./prometheus-values.yaml --version 15.8.5 --reuse-values \
+  --namespace monitoring --create-namespace
+
+
+10. Check NodePort and connect 
+kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+
+
+11. Check some available template:
+Simple one => https://grafana.com/grafana/dashboards/11757
+
+
+12. Change the variable and import again
+
